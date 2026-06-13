@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">VolBright</string>
+    <string name="accessibility_service_description">Used to detect foreground apps and hide the volume floating button for excluded apps.</string>
+</resources>
