@@ -54,6 +54,14 @@ fun MainScreen(
     var size by remember { mutableFloatStateOf(prefs.overlaySize.toFloat()) }
     var sensitivity by remember { mutableFloatStateOf(prefs.dragSensitivity) }
     var volumeStream by remember { mutableIntStateOf(prefs.volumeStream) }
+    var showVolume by remember { mutableStateOf(prefs.showVolume) }
+    var showBrightness by remember { mutableStateOf(prefs.showBrightness) }
+    var showNetwork by remember { mutableStateOf(prefs.showNetwork) }
+    
+    var simName by remember { mutableStateOf(prefs.simName) }
+    var networkMenuName by remember { mutableStateOf(prefs.networkMenuName) }
+    var network4gName by remember { mutableStateOf(prefs.network4gName) }
+    var network5gName by remember { mutableStateOf(prefs.network5gName) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
@@ -70,11 +78,18 @@ fun MainScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(opacity, size, sensitivity, volumeStream) {
+    LaunchedEffect(opacity, size, sensitivity, volumeStream, showVolume, showBrightness, showNetwork, simName, networkMenuName, network4gName, network5gName) {
         prefs.overlayOpacity = opacity
         prefs.overlaySize = size.toInt()
         prefs.dragSensitivity = sensitivity
         prefs.volumeStream = volumeStream
+        prefs.showVolume = showVolume
+        prefs.showBrightness = showBrightness
+        prefs.showNetwork = showNetwork
+        prefs.simName = simName
+        prefs.networkMenuName = networkMenuName
+        prefs.network4gName = network4gName
+        prefs.network5gName = network5gName
         if (isEnabled) {
             context.startService(Intent(context, FloatingWindowService::class.java).apply {
                 action = FloatingWindowService.ACTION_SETTINGS_UPDATED
@@ -164,6 +179,92 @@ fun MainScreen(
                                 uncheckedTrackColor = Color.DarkGray
                             )
                         )
+                    }
+                }
+
+                // Active Buttons Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Active Buttons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accentOrange)
+                        
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Volume Control", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                            Switch(checked = showVolume, onCheckedChange = { showVolume = it }, colors = SwitchDefaults.colors(checkedTrackColor = accentCyan))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Brightness Control", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                            Switch(checked = showBrightness, onCheckedChange = { showBrightness = it }, colors = SwitchDefaults.colors(checkedTrackColor = accentCyan))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text("Network Menu (4G/5G)", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                                Text("Uses Accessibility to auto-click", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            }
+                            Switch(checked = showNetwork, onCheckedChange = { showNetwork = it }, colors = SwitchDefaults.colors(checkedTrackColor = accentCyan))
+                        }
+                    }
+                }
+
+                // Network Automation Setup Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Network Script Setup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accentCyan)
+                        Text("Type the exact text shown in your phone's settings so the automation script knows what to click.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        
+                        OutlinedTextField(
+                            value = simName,
+                            onValueChange = { simName = it },
+                            label = { Text("SIM Card Name", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                        )
+                        OutlinedTextField(
+                            value = networkMenuName,
+                            onValueChange = { networkMenuName = it },
+                            label = { Text("Network Mode Menu Name", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            OutlinedTextField(
+                                value = network4gName,
+                                onValueChange = { network4gName = it },
+                                label = { Text("4G Option", color = Color.Gray) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                            )
+                            OutlinedTextField(
+                                value = network5gName,
+                                onValueChange = { network5gName = it },
+                                label = { Text("5G Option", color = Color.Gray) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                            )
+                        }
                     }
                 }
 

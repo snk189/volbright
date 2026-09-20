@@ -54,9 +54,16 @@ class FloatingWindowService : Service() {
     private var brightnessButton: ImageView? = null
     private lateinit var brightnessParams: WindowManager.LayoutParams
     
+    private var networkView: FrameLayout? = null
+    private var networkButton: android.widget.TextView? = null
+    private lateinit var networkParams: WindowManager.LayoutParams
+    
     private var sliderView: FrameLayout? = null
     private var sliderProgressBar: android.widget.ProgressBar? = null
     private lateinit var sliderParams: WindowManager.LayoutParams
+    
+    private var isAppAllowed = true
+    private var isKeyboardOpen = false
     
     private var vibrator: Vibrator? = null
 
@@ -94,9 +101,15 @@ class FloatingWindowService : Service() {
             ACTION_SHOW -> showWindows()
             ACTION_UPDATE_VISIBILITY -> {
                 val isVisible = intent.getBooleanExtra(EXTRA_IS_VISIBLE, true)
-                if (isVisible) showWindows() else hideWindows()
+                isKeyboardOpen = intent.getBooleanExtra("EXTRA_IS_KEYBOARD_OPEN", false)
+                isAppAllowed = isVisible
+                updateWindowsVisibility()
             }
-            ACTION_SETTINGS_UPDATED -> updateViewAppearance()
+            ACTION_SETTINGS_UPDATED -> {
+                updateViewAppearance()
+                updateWindowsVisibility()
+                networkButton?.text = if (prefs.is5GEnabled) "5G" else "4G"
+            }
         }
         return START_STICKY
     }
@@ -160,7 +173,7 @@ class FloatingWindowService : Service() {
         val x1 = (screenWidth * prefs.overlayXPercent).toInt()
         val y1 = (screenHeight * prefs.overlayYPercent).toInt()
         volumeParams = createLayoutParams(x1, y1)
-        setupTouchListeners(volumeButton, volumeParams, volumeView, isVolume = true)
+        setupTouchListeners(volumeButton, volumeParams, volumeView, buttonType = 0)
 
         // --- Brightness Button ---
         brightnessView = FrameLayout(this)
@@ -175,7 +188,25 @@ class FloatingWindowService : Service() {
         val x2 = (screenWidth * prefs.overlay2XPercent).toInt()
         val y2 = (screenHeight * prefs.overlay2YPercent).toInt()
         brightnessParams = createLayoutParams(x2, y2)
-        setupTouchListeners(brightnessButton, brightnessParams, brightnessView, isVolume = false)
+        setupTouchListeners(brightnessButton, brightnessParams, brightnessView, buttonType = 1)
+
+        // --- Network Button ---
+        networkView = FrameLayout(this)
+        networkButton = android.widget.TextView(this).apply {
+            text = if (prefs.is5GEnabled) "5G" else "4G"
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            val pad = 24
+            setPadding(pad, pad, pad, pad)
+        }
+        networkView?.addView(networkButton)
+        
+        val x3 = (screenWidth * prefs.overlay3XPercent).toInt()
+        val y3 = (screenHeight * prefs.overlay3YPercent).toInt()
+        networkParams = createLayoutParams(x3, y3)
+        setupTouchListeners(networkButton, networkParams, networkView, buttonType = 2)
 
         // --- Custom Brightness Slider ---
         sliderView = FrameLayout(this).apply {
@@ -201,7 +232,9 @@ class FloatingWindowService : Service() {
         try {
             windowManager.addView(volumeView, volumeParams)
             windowManager.addView(brightnessView, brightnessParams)
+            windowManager.addView(networkView, networkParams)
             windowManager.addView(sliderView, sliderParams)
+            updateWindowsVisibility()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -221,6 +254,10 @@ class FloatingWindowService : Service() {
         brightnessButton?.alpha = opacity
         setButtonColor(brightnessButton, Color.parseColor("#80000000"))
 
+        networkButton?.layoutParams = buttonParams
+        networkButton?.alpha = opacity
+        setButtonColor(networkButton, Color.parseColor("#80000000"))
+
         try {
             if (volumeView?.isAttachedToWindow == true) {
                 windowManager.updateViewLayout(volumeView, volumeParams)
@@ -228,24 +265,26 @@ class FloatingWindowService : Service() {
             if (brightnessView?.isAttachedToWindow == true) {
                 windowManager.updateViewLayout(brightnessView, brightnessParams)
             }
+            if (networkView?.isAttachedToWindow == true) {
+                windowManager.updateViewLayout(networkView, networkParams)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    private fun setButtonColor(button: ImageView?, color: Int) {
+    private fun setButtonColor(button: View?, color: Int) {
         val drawable = android.graphics.drawable.GradientDrawable()
         drawable.shape = android.graphics.drawable.GradientDrawable.OVAL
         drawable.setColor(color)
         button?.background = drawable
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun setupTouchListeners(
-        button: ImageView?, 
+        button: View?, 
         params: WindowManager.LayoutParams, 
         rootView: FrameLayout?, 
-        isVolume: Boolean
+        buttonType: Int
     ) {
         var initialX = 0
         var initialY = 0
@@ -267,21 +306,27 @@ class FloatingWindowService : Service() {
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     
-                    if (isVolume) {
-                        startValue = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                    } else {
+                    if (buttonType == 0) {
+                        startValue = audioManager.getStreamVolume(prefs.volumeStream)
+                    } else if (buttonType == 1) {
                         try {
                             startValue = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
                         } catch (e: Settings.SettingNotFoundException) {
                             startValue = 125
                         }
+                    } else {
+                        startValue = 0
                     }
                     
                     isMoveMode = false
                     isLongPressStarted = false
 
-                    // Highlight Green/Orange when touched for adjustment
-                    val activeColor = if (isVolume) Color.parseColor("#4CAF50") else Color.parseColor("#FF9800")
+                    // Highlight Green/Orange/Cyan when touched for adjustment
+                    val activeColor = when (buttonType) {
+                        0 -> Color.parseColor("#4CAF50") // Green for Volume
+                        1 -> Color.parseColor("#FF9800") // Orange for Brightness
+                        else -> Color.parseColor("#00BCD4") // Cyan for Network
+                    }
                     setButtonColor(button, activeColor)
 
                     longPressRunnable = Runnable {
@@ -309,11 +354,13 @@ class FloatingWindowService : Service() {
                         windowManager.updateViewLayout(rootView, params)
                     } else if (!isLongPressStarted) {
                         // Adjustment mode
+                        if (buttonType == 2) return@setOnTouchListener true // Network button doesn't drag to adjust
+                        
                         val sensitivity = prefs.dragSensitivity // default 1000f
                         // Drag up (-dy) or drag right (+dx) increases the value
                         val deltaFraction = (-dy + dx) / sensitivity
 
-                        if (isVolume) {
+                        if (buttonType == 0) {
                             val stream = prefs.volumeStream
                             val maxVol = audioManager.getStreamMaxVolume(stream)
                             val deltaVol = (deltaFraction * maxVol).toInt()
@@ -324,8 +371,8 @@ class FloatingWindowService : Service() {
                                 newVol,
                                 AudioManager.FLAG_SHOW_UI
                             )
-                        } else {
-                            if (Settings.System.canWrite(this)) {
+                        } else if (buttonType == 1) {
+                            if (Settings.System.canWrite(this@FloatingWindowService)) {
                                 sliderView?.visibility = View.VISIBLE
                                 val maxBright = 255
                                 val deltaBright = (deltaFraction * maxBright).toInt()
@@ -341,12 +388,22 @@ class FloatingWindowService : Service() {
                     longPressRunnable?.let { handler.removeCallbacks(it) }
                     if (isMoveMode) {
                         val (screenWidth, screenHeight) = getScreenSize()
-                        if (isVolume) {
+                        if (buttonType == 0) {
                             prefs.overlayXPercent = params.x.toFloat() / screenWidth
                             prefs.overlayYPercent = params.y.toFloat() / screenHeight
-                        } else {
+                        } else if (buttonType == 1) {
                             prefs.overlay2XPercent = params.x.toFloat() / screenWidth
                             prefs.overlay2YPercent = params.y.toFloat() / screenHeight
+                        } else {
+                            prefs.overlay3XPercent = params.x.toFloat() / screenWidth
+                            prefs.overlay3YPercent = params.y.toFloat() / screenHeight
+                        }
+                    } else if (!isMoveMode && !isLongPressStarted && event.action == MotionEvent.ACTION_UP) {
+                        // Click event!
+                        if (buttonType == 2) {
+                            val automationIntent = Intent("com.example.volbright.ACTION_START_AUTOMATION")
+                            automationIntent.setPackage(packageName)
+                            sendBroadcast(automationIntent)
                         }
                     }
                     isMoveMode = false
@@ -368,14 +425,21 @@ class FloatingWindowService : Service() {
         }
     }
 
+    private fun updateWindowsVisibility() {
+        val showBase = prefs.isEnabled && isAppAllowed && !isKeyboardOpen
+        volumeView?.visibility = if (showBase && prefs.showVolume) View.VISIBLE else View.GONE
+        brightnessView?.visibility = if (showBase && prefs.showBrightness) View.VISIBLE else View.GONE
+        networkView?.visibility = if (showBase && prefs.showNetwork) View.VISIBLE else View.GONE
+    }
+
     private fun hideWindows() {
-        volumeView?.visibility = View.GONE
-        brightnessView?.visibility = View.GONE
+        isAppAllowed = false
+        updateWindowsVisibility()
     }
 
     private fun showWindows() {
-        volumeView?.visibility = View.VISIBLE
-        brightnessView?.visibility = View.VISIBLE
+        isAppAllowed = true
+        updateWindowsVisibility()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -393,12 +457,18 @@ class FloatingWindowService : Service() {
             brightnessParams.y = (screenHeight * prefs.overlay2YPercent).toInt()
             windowManager.updateViewLayout(brightnessView, brightnessParams)
         }
+        if (::networkParams.isInitialized && networkView?.isAttachedToWindow == true) {
+            networkParams.x = (screenWidth * prefs.overlay3XPercent).toInt()
+            networkParams.y = (screenHeight * prefs.overlay3YPercent).toInt()
+            windowManager.updateViewLayout(networkView, networkParams)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (volumeView != null) windowManager.removeView(volumeView)
         if (brightnessView != null) windowManager.removeView(brightnessView)
+        if (networkView != null) windowManager.removeView(networkView)
         if (sliderView != null) windowManager.removeView(sliderView)
     }
 }
